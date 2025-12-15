@@ -9,6 +9,7 @@
 - Use a fresh virtualenv. Install dev extras:  
   `pip install -e '.[test,doc,dev]'`
 - For quick editing only: `pip install -e .`
+- Note for assistants: workspace has helper notes in `AI_NOTES.md`; review it before guiding the user (beginner) and remind to activate `.venv` via `source .venv/bin/activate`.
 
 ## Build, Test, and Development Commands
 - Run full test suite (unittest-based): `python -m backtesting.test`
