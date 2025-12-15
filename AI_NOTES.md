@@ -6,4 +6,4 @@
 - Minimal install already done: `pip install -e .`. For full tooling (tests/docs/dev), use `pip install -e '.[test,doc,dev]'` inside the venv.
 - Quick sanity test for BTC data:  
   `python - <<'PY'\nfrom backtesting.test import BTCUSD; print(BTCUSD.head())\nPY`
-- Starter backtest script location suggestion: create `examples/btc_sma.py` and run with `python examples/btc_sma.py` from an activated venv.
+- Playground for experiments lives in `playground/`; starter script: `playground/btc_sma.py` (run with `python playground/btc_sma.py`). Keep instructions beginner-friendly and remind to activate `.venv`.
