@@ -1,6 +1,6 @@
-"""Quick BTC SMA crossover example for personal experiments.
+"""Quick BTC SMA crossover example on monthly BTC USD data (legacy fixture).
 
-Trading idea (plain English):
+Trading idea:
 - Compute two simple moving averages (fast=3 months, slow=6 months) on BTC USD monthly data.
 - When the fast MA crosses above the slow MA, go long (buy). When it crosses below, close and go short (sell).
 - One position at a time; pay 0.1% commission per trade; exclusive orders avoid overlapping entries.
@@ -42,7 +42,7 @@ def main():
     # Save interactive chart to playground/results with timestamped filename to avoid overwrites
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
-    outfile = results_dir / f"sma_{datetime.now():%Y%m%d_%H%M%S}.html"
+    outfile = results_dir / f"sma_1M_{datetime.now():%Y%m%d_%H%M%S}.html"
     bt.plot(filename=str(outfile), open_browser=False)
     print(f"Plot saved to {outfile.resolve()}")
 

@@ -22,3 +22,10 @@ build/*
 *~*
 
 .venv/
+
+# Local market data (not tracked)
+data/**/*.csv
+data/**/*.parquet
+data/**/*.feather
+data/**/raw/
+data/**/resampled/

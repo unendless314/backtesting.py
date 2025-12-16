@@ -1,0 +1,10 @@
+Window: last 2000 days, 2020-06-26 to 2025-12-16
+Total budget: $100,000
+
+Lump-sum Buy & Hold
+  Final value: $936,907.14
+  Return: 836.91% | CAGR: 50.47% | Max DD: -76.63%
+
+DCA (budget split evenly across window)
+  Final value: $258,994.02
+  Return: 158.99% | CAGR: 18.98% | Max DD: -64.84%

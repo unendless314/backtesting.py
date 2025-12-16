@@ -38,3 +38,12 @@
 ## Security & Configuration
 - Do not commit credentials or data beyond the provided CSV fixtures. Plotly/JS assets live locally; no external CDN keys are required.
 - Local config belongs in env variables or ignored files; confirm `.gitignore` coverage before adding tooling outputs.
+
+## Data Fetching Scripts (Binance via ccxt)
+- New folder `scripts/data/` holds data-update utilities. Main tool: `scripts/data/fetch_binance.py`.
+- Dependencies: activate `.venv` then `pip install ccxt pandas`.
+- Usage example:  
+  `python scripts/data/fetch_binance.py --symbol BTC/USDT --tf 1d --since 2013-01-01 --out data/raw/BTCUSDT_1d.csv --resample 3D`  
+  `--tf` supports Binance intervals (1m–1M); `--resample` applies pandas rule (e.g., 3D/1W) before saving.
+- Outputs should stay local; `.gitignore` ignores `data/**` (csv/parquet/feather, raw/resampled). Keep credentials in env vars.
+- Purpose: isolate data acquisition from core backtesting code; safe to modify without touching `backtesting/`.
