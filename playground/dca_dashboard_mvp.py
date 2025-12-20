@@ -14,8 +14,8 @@ DATA_PATH = Path('data/raw/BTCUSDT_1d.csv')
 RESULTS_DIR = Path('playground/results')
 OUTPUT_HTML = RESULTS_DIR / 'dca_mvp_dashboard.html'
 
-START_CAPITAL = 60_000.0
-SPANS = [100, 200, 300, 400, 500, 600, 800, 1000, 1200]
+START_CAPITAL = 180_000.0
+SPANS = [100, 150, 200, 250, 300, 400, 450, 500, 600, 800, 900, 1000, 1200]
 THRESHOLDS = [-10, -20, -30, -40, -50, -60, -70]  # percent, negative values
 
 

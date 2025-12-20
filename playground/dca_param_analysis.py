@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import pandas as pd
 from bokeh.io import output_file, save
@@ -109,7 +109,7 @@ def build_table_texts(df: pd.DataFrame) -> Dict[str, str]:
                     f'<td style="border:1px solid #ccc; padding:4px; text-align:center; {style}">{value}</td>'
                 )
             rows_html.append(
-                f'<tr><th style="border:1px solid #ccc; padding:4px;"><a href="#chart_thr_{int(thr)}">{thr_label}</a></th>'
+                f'<tr><th style="border:1px solid #ccc; padding:4px;">{thr_label}</th>'
                 + ''.join(cells)
                 + '</tr>'
             )
@@ -125,17 +125,30 @@ def build_table_texts(df: pd.DataFrame) -> Dict[str, str]:
     return tables
 
 
-def build_threshold_slices(df: pd.DataFrame) -> Dict[str, Dict[str, List[List[float]]]]:
+def build_threshold_slices(
+    df: pd.DataFrame,
+) -> Dict[str, Dict[str, Dict[str, List[Tuple[int, float]]]]]:
+    """Return interval-scoped slices so lines don't connect across intervals."""
+
     thresholds = sorted(df['threshold_pct'].unique(), reverse=True)
-    data: Dict[str, Dict[str, List[List[float]]]] = {}
-    for key in METRICS_INFO:
-        if key not in df.columns:
-            continue
-        thr_map: Dict[str, List[List[float]]] = {}
-        for thr in thresholds:
-            rows = df[df['threshold_pct'] == thr].sort_values('span')
-            thr_map[f'{thr:.0f}'] = [[int(row['span']), float(row[key])] for _, row in rows.iterrows()]
-        data[key] = thr_map
+    labels = sorted(df['label'].unique())
+    data: Dict[str, Dict[str, Dict[str, List[Tuple[int, float]]]]] = {}
+
+    for label in labels:
+        label_df = df[df['label'] == label]
+        data[label] = {}
+        for key in METRICS_INFO:
+            if key not in label_df.columns:
+                continue
+            thr_map: Dict[str, List[Tuple[int, float]]] = {}
+            for thr in thresholds:
+                rows = label_df[label_df['threshold_pct'] == thr].sort_values('span')
+                thr_map[f'{thr:.0f}'] = [
+                    (int(row['span']), float(row[key]))
+                    for _, row in rows.iterrows()
+                ]
+            data[label][key] = thr_map
+
     return data
 
 
@@ -176,7 +189,7 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
         fig.xaxis.major_label_orientation = 1
         threshold_figs.append((thr, fig))
 
-    initial_slices = slices.get(target_metric, {})
+    initial_slices = slices.get(interval_label, {}).get(target_metric, {})
     for idx, thr in enumerate(thresholds):
         thr_key = f'{int(thr)}'
         rows = initial_slices.get(thr_key, [])
@@ -195,7 +208,7 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
             table_div=table_div,
             summary_texts=json.dumps(summary_map),
             metric_tables=json.dumps(table_map),
-            slices=slices,
+            slices_json=json.dumps(slices),
             thresholds=thresholds,
             threshold_sources=threshold_sources,
             threshold_figs=[fig for _, fig in threshold_figs],
@@ -204,12 +217,14 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
         code="""
         const summaries = JSON.parse(summary_texts);
         const tables = JSON.parse(metric_tables);
+        const slicesByInterval = JSON.parse(slices_json);
+
         const metric = metric_select.value;
         const interval = interval_select.value;
         const summary_interval = summaries[interval] || summaries[Object.keys(summaries)[0]] || {};
         summary_div.text = summary_interval[metric] || '';
         table_div.text = tables[metric] || '';
-        const data = slices[metric] || {};
+        const data = (slicesByInterval[interval] || {})[metric] || {};
         for (let i = 0; i < thresholds.length; i++) {
             const thr = `${thresholds[i]}`;
             const rows = data[thr] || [];
@@ -242,13 +257,10 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
     callback.args['interval_select'] = interval_select
     metric_select.value = metric_select.value  # trigger initial render
 
-    instruction_div = Div(text='<strong>Click the Trigger links in the table to jump to each chart below.</strong>')
-
     layout = column(
         row(metric_select, interval_select),
         table_div,
         summary_div,
-        instruction_div,
         *[column(Div(text=f'<a id="chart_thr_{int(thr)}"></a>'), fig) for thr, fig in threshold_figs],
     )
     save(layout)
