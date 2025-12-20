@@ -7,5 +7,7 @@
 - Quick sanity test for BTC data:  
   `python - <<'PY'\nfrom backtesting.test import BTCUSD; print(BTCUSD.head())\nPY`
 - Playground for experiments lives in `playground/`; starter script: `playground/btc_sma.py` (run with `python playground/btc_sma.py`). Keep instructions beginner-friendly and remind to activate `.venv`.
+- Localized dashboards live in `playground/dca_dashboard_mvp_zh.py` and `playground/dca_param_analysis_zh.py`; they emit `playground/results/dca_mvp_dashboard_zh.html` and `playground/results/dca_param_analysis_zh.html`. Keep the `playground/README.md` script → HTML mapping updated whenever these are touched.
 - Preference: when AI writes/modifies strategy code, include short inline comments/docstrings explaining the trading idea, entry/exit rules, key params, and why certain settings (commission, cash, exclusive_orders) are used—user is a beginner.
 - Save plots under `playground/results/` with timestamped filenames to avoid overwrite and to keep repo root clean; default pattern used in btc_sma.py: `results/sma_YYYYMMDD_HHMMSS.html`.
+- Keep the “Script → HTML outputs” mapping in `playground/README.md` updated when you add new dashboard scripts so it stays a handy reference.
