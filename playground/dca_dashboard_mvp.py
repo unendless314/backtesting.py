@@ -152,6 +152,10 @@ def simulate_dca(
     min_equity_date = equity_series.idxmin().date().isoformat()
     floor_loss_pct = (min_equity - START_CAPITAL) / START_CAPITAL
 
+    invested_ratio = invested / START_CAPITAL
+    total_return = (equity_final - START_CAPITAL) / START_CAPITAL
+    expected_return = invested_ratio * total_return if invested_ratio > 0 else 0.0
+
     metrics = {
         'span': span,
         'threshold': threshold_pct,
@@ -160,7 +164,7 @@ def simulate_dca(
         'buys': len(buy_df),
         'invested': invested,
         'cash_left': cash,
-        'total_return': (equity_final - START_CAPITAL) / START_CAPITAL,
+        'total_return': total_return,
         'annualized_return': annualized_return,
         'avg_cost': avg_cost,
         'final_price': final_price,
@@ -168,7 +172,7 @@ def simulate_dca(
         'sharpe': sharpe,
         'sortino': sortino,
         'cash_ratio': cash / START_CAPITAL,
-        'invested_ratio': invested / START_CAPITAL,
+        'invested_ratio': invested_ratio,
         'longest_loss_streak_days': longest_below_start,
         'days_below_start': days_below_start,
         'last_buy_price': last_buy_price,
@@ -177,6 +181,7 @@ def simulate_dca(
         'min_equity': min_equity,
         'min_equity_date': min_equity_date,
         'floor_loss_pct': floor_loss_pct,
+        'expected_return': expected_return,
     }
     metrics = {
         key: float(value) if isinstance(value, (np.generic,)) else value

@@ -25,6 +25,7 @@ METRICS_INFO_ZH = {
     'invested_ratio': {'label': '投入比例', 'format': 'pct', 'best': 'max'},
     'days_below_start': {'label': '低於起始資金天數', 'format': 'int', 'best': 'min'},
     'longest_loss_streak_days': {'label': '最長虧損日數', 'format': 'int', 'best': 'min'},
+    'expected_return': {'label': '期望報酬', 'format': 'pct', 'best': 'max'},
 }
 
 

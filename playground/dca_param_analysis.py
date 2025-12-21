@@ -29,6 +29,7 @@ METRICS_INFO = {
         'format': 'int',
         'best': 'min',
     },
+    'expected_return': {'label': 'Expected return', 'format': 'pct', 'best': 'max'},
 }
 
 
@@ -78,50 +79,55 @@ def build_interval_summary_map(df: pd.DataFrame) -> Dict[str, Dict[str, str]]:
     return summary
 
 
-def build_table_texts(df: pd.DataFrame) -> Dict[str, str]:
-    tables: Dict[str, str] = {}
+def build_table_texts(df: pd.DataFrame) -> Dict[str, Dict[str, str]]:
+    """Return HTML tables per interval + metric so UI updates with interval selection."""
+
+    tables: Dict[str, Dict[str, str]] = {}
     spans = sorted(df['span'].unique())
     thresholds = sorted(df['threshold_pct'].unique(), reverse=True)
 
-    for key, info in METRICS_INFO.items():
-        if key not in df.columns:
-            continue
-        sorted_df = df.sort_values(key, ascending=(info['best'] == 'min'))
-        best_row = sorted_df.iloc[0]
-        best_span = int(best_row['span'])
-        best_threshold = float(best_row['threshold_pct'])
+    for label in sorted(df['label'].unique()):
+        label_df = df[df['label'] == label]
+        tables[label] = {}
+        for key, info in METRICS_INFO.items():
+            if key not in label_df.columns:
+                continue
+            sorted_df = label_df.sort_values(key, ascending=(info['best'] == 'min'))
+            best_row = sorted_df.iloc[0]
+            best_span = int(best_row['span'])
+            best_threshold = float(best_row['threshold_pct'])
 
-        header = (
-            '<tr><th style="border:1px solid #ccc; padding:4px;">Trigger \\ Span</th>'
-            + ''.join(f'<th style="border:1px solid #ccc; padding:4px;">{int(span)}</th>' for span in spans)
-            + '</tr>'
-        )
-
-        rows_html: List[str] = []
-        for thr in thresholds:
-            cells: List[str] = []
-            thr_label = f'{thr:.0f}%'
-            for span in spans:
-                row = df[(df['threshold_pct'] == thr) & (df['span'] == span)]
-                value = format_value(row.iloc[0][key], info['format']) if not row.empty else 'n/a'
-                style = 'background:#fff9c4;' if span == best_span and thr == best_threshold else ''
-                cells.append(
-                    f'<td style="border:1px solid #ccc; padding:4px; text-align:center; {style}">{value}</td>'
-                )
-            rows_html.append(
-                f'<tr><th style="border:1px solid #ccc; padding:4px;">{thr_label}</th>'
-                + ''.join(cells)
+            header = (
+                '<tr><th style="border:1px solid #ccc; padding:4px;">Trigger \\ Span</th>'
+                + ''.join(f'<th style="border:1px solid #ccc; padding:4px;">{int(span)}</th>' for span in spans)
                 + '</tr>'
             )
 
-        table = (
-            '<div style="max-height:360px; overflow:auto;">'
-            '<table style="border-collapse:collapse; font-size:12px; width:100%;">'
-            f'{header}'
-            f'{"".join(rows_html)}'
-            '</table></div>'
-        )
-        tables[key] = table
+            rows_html: List[str] = []
+            for thr in thresholds:
+                cells: List[str] = []
+                thr_label = f'{thr:.0f}%'
+                for span in spans:
+                    row = label_df[(label_df['threshold_pct'] == thr) & (label_df['span'] == span)]
+                    value = format_value(row.iloc[0][key], info['format']) if not row.empty else 'n/a'
+                    style = 'background:#fff9c4;' if span == best_span and thr == best_threshold else ''
+                    cells.append(
+                        f'<td style="border:1px solid #ccc; padding:4px; text-align:center; {style}">{value}</td>'
+                    )
+                rows_html.append(
+                    f'<tr><th style="border:1px solid #ccc; padding:4px;">{thr_label}</th>'
+                    + ''.join(cells)
+                    + '</tr>'
+                )
+
+            table = (
+                '<div style="max-height:360px; overflow:auto;">'
+                '<table style="border-collapse:collapse; font-size:12px; width:100%;">'
+                f'{header}'
+                f'{"".join(rows_html)}'
+                '</table></div>'
+            )
+            tables[label][key] = table
     return tables
 
 
@@ -169,7 +175,7 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
     spans = sorted(df['span'].unique())
 
     summary_div.text = summary_map.get(interval_label, {}).get(target_metric, '')
-    table_div.text = table_map.get(target_metric, '')
+    table_div.text = table_map.get(interval_label, {}).get(target_metric, '')
 
     threshold_sources: List[ColumnDataSource] = []
     threshold_figs = []
@@ -223,7 +229,8 @@ def create_heatmap(df: pd.DataFrame, target_metric: str, interval_label: str, in
         const interval = interval_select.value;
         const summary_interval = summaries[interval] || summaries[Object.keys(summaries)[0]] || {};
         summary_div.text = summary_interval[metric] || '';
-        table_div.text = tables[metric] || '';
+        const tblInterval = tables[interval] || tables[Object.keys(tables)[0]] || {};
+        table_div.text = tblInterval[metric] || '';
         const data = (slicesByInterval[interval] || {})[metric] || {};
         for (let i = 0; i < thresholds.length; i++) {
             const thr = `${thresholds[i]}`;

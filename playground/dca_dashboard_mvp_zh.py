@@ -189,6 +189,7 @@ def render_dashboard_cn(close: pd.Series, data_map, metrics_map, intervals) -> N
         f'定投天數：{init_metrics["span"]}<br>'
         f'觸發回撤：{init_metrics["threshold"] * 100:.0f}%<br>'
         f'投入比例：{fmt_pct(init_metrics["invested_ratio"])}<br>'
+        f'期望報酬：{fmt_pct(init_metrics.get("expected_return", 0.0))}<br>'
         f'總報酬：{fmt_pct(init_metrics["total_return"])}<br>'
         f'年化報酬：{fmt_pct(init_metrics["annualized_return"])}<br>'
         f'平均成本：{fmt_dollar(init_metrics["avg_cost"])}<br>'
