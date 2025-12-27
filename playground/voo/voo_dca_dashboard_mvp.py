@@ -17,7 +17,7 @@ DATA_PATH = Path('data/raw/VOO.csv')
 RESULTS_DIR = Path('playground/results')
 
 START_CAPITAL = 180_000.0
-SPANS = [100, 125, 150, 200, 250, 300, 400, 450, 500, 600, 800, 900, 1000, 1200]
+SPANS = [10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 450, 500, 600, 800, 900, 1000, 1200]
 THRESHOLDS = [-5, -10, -15, -20, -25, -30, -35]  # percent, negative values
 
 
