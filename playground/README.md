@@ -37,6 +37,7 @@ Script → HTML outputs
 | `btc/btc_dca_backtest.py` | `results/btc_dca_span_{span}_backtest_{timestamp}.html` | FractionalBacktest output per span, instrumented with custom DCA strategy and asset-prefixed filenames. |
 | `btc/btc_peak_drawdown_ui_1d.py` | `results/btc_peak_gap_dd_{interval}_{timestamp}.html` | Drawdown-aware interval dashboard; `--plot-interval-index`/`--plot-all-intervals` batch-run option also writes one file per interval with a `batch_tag`. |
 | `playground/pendle/pendle_dca_dashboard_mvp.py` | `results/pendle_dca_dashboard_mvp_{timestamp}.html` | Pendle 版本的 DCA MVP 儀表板：原樣從 BTC 量化邏輯複製，只改成讀 `data/raw/PENDLE.csv`，輸出檔名稱帶 `pendle` 前綴。 |
+| `playground/voo/voo_dca_dashboard_mvp.py` | `results/voo_dca_dashboard_mvp_{timestamp}.html` | VOO 版本的 DCA MVP 儀表板：直接複製 Pendle 的 DCA dashboard，改用 `data/raw/VOO.csv` 並輸出帶 `voo` 前綴的 HTML。 |
 | `btc/btc_sma_1d.py` | `results/btc_sma_1d_{YYYYMMDD_HHMMSS}.html` | Daily SMA crossover Backtest chart that resaves with a timestamp to avoid overwriting. |
 | `btc/btc_sma_1M.py` | `results/btc_sma_1M_{YYYYMMDD_HHMMSS}.html` | Monthly SMA crossover demo using `backtesting.test.BTCUSD`; chart filename is timestamped for uniqueness. |
 | `btc/btc_dca_dashboard_mvp.py` | `results/btc_dca_dashboard_mvp_{timestamp}.html` | Interactive DCA MVP dashboard with price, equity %, drawdown, and metric summaries for each ATH→ATH interval (sources `data/raw/BTCUSDT_1d.csv`). |
@@ -44,6 +45,8 @@ Script → HTML outputs
 | `btc/btc_dca_param_analysis.py` | `results/btc_dca_param_analysis_{timestamp}.html` | Parameter heatmap for span/trigger combos with per-interval summaries and tables (reuses the dashboard’s simulations). |
 | `btc/btc_dca_param_analysis_zh.py` | `results/btc_dca_param_analysis_zh_{timestamp}.html` | 中文化的參數分析頁面，表格可點擊的 Trigger 連結會跳至下方靜態圖表，摘要與表格皆為中文描述。 |
 | `playground/pendle/pendle_peak_drawdown_ui_1d.py` | `results/pendle_peak_gap_dd_{interval}_{timestamp}.html` | 和 BTC 脚本相同的 ATH 間隔 + drawdown 圖，使用 `data/raw/PENDLE.csv`（目前只有一段長熊市，因此可視化主要集中在那一輪）。 |
+| `playground/voo/voo_peak_drawdown_ui_1d.py` | `results/voo_peak_gap_dd_{interval}_{timestamp}.html` | 同樣基於 ATH 至 ATH 間隔的 drawdown 儀表板，但資料源換成 `data/raw/VOO.csv`，圖表前綴為 `voo`。 |
 | `playground/pendle/pendle_dca_param_analysis.py` | `results/pendle_dca_param_analysis_{timestamp}.html` | Pendle 版 span/threshold 參數熱圖，資料與統計由 `playground/pendle/pendle_dca_dashboard_mvp.py` 提供，因此資料來源仍是 `data/raw/PENDLE.csv`。 |
+| `playground/voo/voo_dca_param_analysis.py` | `results/voo_dca_param_analysis_{timestamp}.html` | VOO span/threshold 熱圖：參數與摘要來自 `playground/voo/voo_dca_dashboard_mvp.py`，輸出名稱以 `voo` 為前綴。 |
 
 Please ignore the `iv_plot` HTML files (`iv_plot*.html`); they come from a different workflow and are not produced by the scripts listed above.
