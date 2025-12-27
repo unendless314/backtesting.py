@@ -17,8 +17,8 @@ DATA_PATH = Path('data/raw/VOO.csv')
 RESULTS_DIR = Path('playground/results')
 
 START_CAPITAL = 180_000.0
-SPANS = [100, 150, 200, 250, 300, 400, 450, 500, 600, 800, 900, 1000, 1200]
-THRESHOLDS = [-10, -20, -30, -40, -50, -60, -70]  # percent, negative values
+SPANS = [100, 125, 150, 200, 250, 300, 400, 450, 500, 600, 800, 900, 1000, 1200]
+THRESHOLDS = [-5, -10, -15, -20, -25, -30, -35]  # percent, negative values
 
 
 def find_peak_intervals(close: pd.Series, min_len: int = 100, top_n: int = 5) -> List[Tuple[str, int, int]]:
