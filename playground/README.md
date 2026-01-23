@@ -48,5 +48,11 @@ Script → HTML outputs
 | `playground/voo/voo_peak_drawdown_ui_1d.py` | `results/voo_peak_gap_dd_{interval}_{timestamp}.html` | 同樣基於 ATH 至 ATH 間隔的 drawdown 儀表板，但資料源換成 `data/raw/VOO.csv`，圖表前綴為 `voo`。 |
 | `playground/pendle/pendle_dca_param_analysis.py` | `results/pendle_dca_param_analysis_{timestamp}.html` | Pendle 版 span/threshold 參數熱圖，資料與統計由 `playground/pendle/pendle_dca_dashboard_mvp.py` 提供，因此資料來源仍是 `data/raw/PENDLE.csv`。 |
 | `playground/voo/voo_dca_param_analysis.py` | `results/voo_dca_param_analysis_{timestamp}.html` | VOO span/threshold 熱圖：參數與摘要來自 `playground/voo/voo_dca_dashboard_mvp.py`，輸出名稱以 `voo` 為前綴。 |
+| `playground/eth/eth_dca_dashboard_mvp.py` | `results/eth_dca_dashboard_mvp_{timestamp}.html` | ETH 版本的 DCA MVP 儀表板：從 BTC 邏輯移植，讀取 `data/raw/ETHUSDT_1d.csv`，輸出帶 `eth` 前綴。 |
+| `playground/eth/eth_dca_param_analysis.py` | `results/eth_dca_param_analysis_{timestamp}.html` | ETH 參數熱圖分析：分析不同 span/trigger 組合在 ETH 歷史數據下的表現。 |
+| `playground/eth/eth_peak_drawdown_ui_1d.py` | `results/eth_peak_gap_dd_{interval}_{timestamp}.html` | ETH ATH-to-ATH 區間與回撤可視化儀表板。 |
+| `playground/aave/aave_dca_dashboard_mvp.py` | `results/aave_dca_dashboard_mvp_{timestamp}.html` | AAVE 版本的 DCA MVP 儀表板：讀取 `data/raw/AAVEUSDT_1d.csv` 並生成互動式回測報告。 |
+| `playground/aave/aave_dca_param_analysis.py` | `results/aave_dca_param_analysis_{timestamp}.html` | AAVE 參數熱圖分析：評估不同 DCA 策略參數對 AAVE 的影響。 |
+| `playground/aave/aave_peak_drawdown_ui_1d.py` | `results/aave_peak_gap_dd_{interval}_{timestamp}.html` | AAVE ATH-to-ATH 區間與回撤可視化儀表板。 |
 
 Please ignore the `iv_plot` HTML files (`iv_plot*.html`); they come from a different workflow and are not produced by the scripts listed above.
