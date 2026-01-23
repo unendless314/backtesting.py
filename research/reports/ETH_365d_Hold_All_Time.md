@@ -1,33 +1,52 @@
-# ETH 365-Day Hold Analysis
+# ETH 365天 持倉回測分析
 
-**Data Source**: `ETHUSDT_1d.csv`
-**Full Data Range**: 2017-08-17 to 2026-01-22
-**Analyzed Buy Window**: 2017-08-17 to 2025-01-22
+**數據來源**: `ETHUSDT_1d.csv`
+**完整數據範圍**: 2017-08-17 至 2026-01-22
+**分析進場區間**: 2017-08-17 至 2025-01-22
 
-## Statistics Overview
-| Metric | Value |
-| :--- | :--- |
-| **Total Trading Days** | 2716 days |
-| **Win Rate** | **56.26%** (1528 days) |
-| **Loss Rate** | 43.74% (1188 days) |
-| **Skewness** | 2.58 (>1 implies fat tail) |
-
-## Returns Analysis
-| Metric | Mean (Avg) | Median (Robust) |
+## 統計概覽 (Statistics Overview)
+| 指標 | 數值 | 說明 |
 | :--- | :--- | :--- |
-| **General Return** | 130.48% | **21.23%** |
-| **Win Magnitude** | +263.24% | +76.74% |
-| **Loss Magnitude** | -40.27% | -38.17% |
-| **Reward/Risk Ratio** | **6.54** | **2.01** |
+| **總交易樣本數** | 2716 天 | 模擬在此區間內每天買入 |
+| **勝率 (Win Rate)** | **56.26%** (1528 天) | 持有 365 天後獲利的機率 |
+| **賠率 (Loss Rate)** | 43.74% (1188 天) | 持有 365 天後虧損的機率 |
+| **偏度 (Skewness)** | 2.58 | >1 代表具有「暴漲長尾」特性 |
 
-## Kelly Criterion Analysis
-> Formula: $f^* = p - \frac{q}{b}$
-
-| Strategy | Allocation (f*) | Half-Kelly |
+## 回報率分析 (Returns Analysis)
+| 指標 | 平均值 (Mean) | 中位數 (Robust) |
 | :--- | :--- | :--- |
-| **Standard (Based on Mean)** | `49.57%` | `24.78%` |
-| **Robust (Based on Median)** | `34.50%` | `17.25%` |
+| **整體回報率** | 130.48% | **21.23%** |
+| **獲利交易平均回報** | +263.24% | +76.74% |
+| **虧損交易平均回報** | -40.27% | -38.17% |
+| **盈虧比 (Reward/Risk)** | **6.54** | **2.01** |
 
-## Notes
-Analysis generated based on buying everyday within the window and holding for exactly 365 days.
-* **Robust Kelly** uses Median Reward/Risk, which is less sensitive to extreme outliers (e.g., 100x pumps) and provides a safer baseline for position sizing.
+## 情景分析 (Scenario Analysis - Based on Quartiles)
+| 情景 (Scenario) | 機率分界 (Percentile) | 預期回報率 (ROI) |
+| :--- | :--- | :--- |
+| **樂觀情景 (Optimistic)** | Top 25% (Q3) | > **84.03%** |
+| **基準情景 (Baseline)** | Median (Q2) | **21.23%** |
+| **悲觀情景 (Pessimistic)** | Bottom 25% (Q1) | < **-33.58%** |
+
+## 凱利公式資金管理建議 (Kelly Criterion)
+> 公式: $f^* = p - \frac{q}{b}$
+
+| 策略基準 | 建議倉位 (f*) | 半凱利 (保守配置) |
+| :--- | :--- | :--- |
+| **標準策略 (基於平均值)** | `49.57%` | `24.78%` |
+| **穩健策略 (基於中位數)** | `34.50%` | `17.25%` |
+| **保守策略 (基於保守預期)** | `1.68%` | `0.84%` |
+| **激進策略 (基於樂觀預期)** | `53.77%` | `(不建議)` |
+
+## 分析說明與風險提示
+本報告基於歷史數據進行回測，模擬在「分析進場區間」內的**每一天**都買入該資產，並嚴格持有 **365 天**後的結果。
+
+### 1. 凱利公式策略定義
+本報告提供四種不同風險偏好的資金配置建議，請根據個人風險承受能力參考：
+*   **標準策略 (Standard):** 採用歷史平均獲利與虧損。適合相信長期機率回歸平均的投資人。
+*   **穩健策略 (Robust):** 採用歷史中位數 (Median)。過濾了極端暴漲暴跌，比標準策略更貼近一般市場常態。
+*   **保守策略 (Conservative):** 假設獲利只有 Q1 水準 (賺得少)，且虧損高達 Q3 水準 (賠得多)。這是「壓力測試」下的建議倉位。如果您擔心未來行情平庸或運氣不佳，請勿超過此比例。
+*   **激進策略 (Aggressive / Risk Ceiling):** 假設獲利能達 Q3 水準 (大賺)，且虧損僅有 Q1 水準 (小賠)。這是基於「最樂觀劇本」算出的理論上限。**若您的實際倉位超過此數值，代表您正在進行非理性的過度槓桿，風險極高。**
+
+### 2. 其他說明
+*   **為什麼要看中位數 (Robust)?** 加密貨幣常有極端暴漲行情，這會拉高「平均值」並誤導投資人。中位數能更真實地反映「一般情況下」的投資回報。
+*   **風險警示:** 歷史數據不代表未來表現。本報告僅供教育與研究用途，不構成任何財務建議。
