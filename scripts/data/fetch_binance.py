@@ -56,6 +56,24 @@ def get_candle_close_ms(exchange: "ccxt.binance", timeframe: str, start_ms: int)
     return start_ms + int(tf_seconds * 1000)
 
 
+def is_month_resample_rule(rule: str) -> bool:
+    """Return True if rule represents a calendar month frequency (e.g. 1M, ME)."""
+    norm = rule.strip()
+    norm_lower = norm.lower()
+    # Explicitly exclude minutes (e.g. 15min, 15T) and other sub-monthly units
+    if "min" in norm_lower or norm.endswith("T"):
+        return False
+    if norm_lower.endswith("m") and norm.upper() not in {"M", "1M"}:
+        return False
+    try:
+        offset = pd.tseries.frequencies.to_offset(norm)
+        return isinstance(
+            offset, (pd.tseries.offsets.MonthEnd, pd.tseries.offsets.MonthBegin)
+        )
+    except Exception:
+        return norm.upper() in {"M", "1M", "ME", "1ME", "MS", "1MS"}
+
+
 def get_resampled_bar_close_ms(
     ts: pd.Timestamp,
     rule: str,
@@ -63,8 +81,7 @@ def get_resampled_bar_close_ms(
     exchange: "ccxt.binance",
 ) -> int:
     """Return the exclusive closing timestamp (UTC ms) for a resampled bar."""
-    rule_upper = rule.upper()
-    if "M" in rule_upper:
+    if is_month_resample_rule(rule):
         # In pandas resample with label="right", closed="right", a monthly rule (1M, ME)
         # labels the bar on the last day of that calendar month (e.g. 2024-01-31).
         # The month closes at next month 1st 00:00:00 UTC.

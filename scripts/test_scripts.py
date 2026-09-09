@@ -212,6 +212,40 @@ class TestFetchBinanceCandleClose(unittest.TestCase):
 
         self.assertEqual(df_res.index[-1], pd.Timestamp("2026-09-07 00:00:00+00:00"))
 
+    def test_resample_minute_to_15min_regression(self):
+        """
+        Regression Test:
+        --tf 1m --resample 15min must NOT be mistaken for a month frequency (rule '15min').
+        A completed 15-minute bar (00:01 to 00:15) closing at 00:16 UTC must NOT be dropped
+        when evaluated after 00:16 UTC.
+        """
+        dates = pd.date_range("2026-09-09 00:01", "2026-09-09 00:15", freq="1min", tz="UTC")
+        df_raw = pd.DataFrame(
+            {"open": 100, "high": 105, "low": 95, "close": 102, "volume": 10},
+            index=dates,
+        )
+        raw_last_dt = df_raw.index[-1]
+        raw_last_ms = int(raw_last_dt.timestamp() * 1000)
+        raw_last_close_ms = get_candle_close_ms(self.mock_exchange, "1m", raw_last_ms)
+
+        df_res = resample_ohlcv(df_raw, "15min")
+        bar_close_ms = get_resampled_bar_close_ms(
+            df_res.index[-1], "15min", "1m", self.mock_exchange
+        )
+
+        bar_close_dt = pd.to_datetime(bar_close_ms, unit="ms", utc=True)
+        self.assertEqual(bar_close_dt, pd.Timestamp("2026-09-09 00:16:00", tz="UTC"))
+
+        # When evaluated after close (e.g. 00:20:00 UTC), it must NOT be dropped:
+        now_after = int(datetime(2026, 9, 9, 0, 20, tzinfo=timezone.utc).timestamp() * 1000)
+        should_drop_after = bar_close_ms > now_after or bar_close_ms > raw_last_close_ms
+        self.assertFalse(should_drop_after, "Completed 15min bar must NOT be dropped!")
+
+        # When evaluated during candle (e.g. 00:15:30 UTC), it MUST be dropped:
+        now_during = int(datetime(2026, 9, 9, 0, 15, 30, tzinfo=timezone.utc).timestamp() * 1000)
+        should_drop_during = bar_close_ms > now_during or bar_close_ms > raw_last_close_ms
+        self.assertTrue(should_drop_during, "In-progress 15min bar MUST be dropped!")
+
 
 if __name__ == "__main__":
     unittest.main()
