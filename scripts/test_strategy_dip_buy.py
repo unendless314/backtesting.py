@@ -101,16 +101,28 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
 
     # Odds & Kelly Criterion
     if prob_loss == 0:
-        # Edge case: 100% win rate (no losses in sample)
-        # In Kelly formula f* = p - q/b, when q=0, f* = p = 1.0 (100% full allocation)
-        b_odds_mean = float('inf')
-        b_odds_median = float('inf')
-        b_odds_conservative = float('inf')
-        b_odds_aggressive = float('inf')
-        kelly_mean = 1.0
-        kelly_median = 1.0
-        kelly_conservative = 1.0
-        kelly_aggressive = 1.0
+        if prob_win > 0:
+            # Edge case: No losses in sample (all winning or push/ties)
+            # In Kelly formula f* = p - q/b, when q=0, f* = p (100% when win rate is 1.0)
+            b_odds_mean = float('inf')
+            b_odds_median = float('inf')
+            b_odds_conservative = float('inf')
+            b_odds_aggressive = float('inf')
+            kelly_mean = prob_win
+            kelly_median = prob_win
+            kelly_conservative = prob_win
+            kelly_aggressive = prob_win
+        else:
+            # Edge case: All returns are zero / flat (no wins, no losses).
+            # Expected return is zero, so odds and Kelly allocation are 0.
+            b_odds_mean = 0.0
+            b_odds_median = 0.0
+            b_odds_conservative = 0.0
+            b_odds_aggressive = 0.0
+            kelly_mean = 0.0
+            kelly_median = 0.0
+            kelly_conservative = 0.0
+            kelly_aggressive = 0.0
     else:
         # Odds
         b_odds_mean = avg_win / avg_loss if avg_loss > 0 else 0
@@ -197,6 +209,7 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
         f.write(report_content)
     
     print(f"\nReport saved to: {out_path}")
+    return report_content
 
 def main():
     parser = argparse.ArgumentParser()

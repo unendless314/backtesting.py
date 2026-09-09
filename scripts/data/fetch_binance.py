@@ -116,13 +116,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Optional pandas rule to resample (e.g., 3D, 1W).")
     parser.add_argument("--limit", type=int, default=1000,
                         help="Max rows per API call (Binance allows up to 1000).")
+    parser.add_argument(
+        "--drop-unclosed",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Drop the last candle if it has not closed yet (default: True).",
+    )
     args = parser.parse_args(argv)
 
     until_ms = args.until or int(time.time() * 1000)
 
     exchange = ccxt.binance({"enableRateLimit": True})
     print(f"Fetching {args.symbol} {args.timeframe} from {args.since} to {until_ms} ...")
-    rows = fetch_ohlcv_paginated(exchange, args.symbol, args.timeframe, args.since, until_ms, args.limit)
+    rows = fetch_ohlcv_paginated(
+        exchange, args.symbol, args.timeframe, args.since, until_ms, args.limit
+    )
+    if args.drop_unclosed and rows:
+        try:
+            tf_seconds = exchange.parse_timeframe(args.timeframe)
+            now_ms = int(time.time() * 1000)
+            if rows[-1][0] + tf_seconds * 1000 > now_ms:
+                unclosed_dt = pd.to_datetime(rows[-1][0], unit="ms", utc=True)
+                print(f"Excluding unclosed candle starting at {unclosed_dt}")
+                rows = rows[:-1]
+        except Exception as exc:
+            print(f"Warning: Could not check unclosed candle: {exc}")
+
     df = to_dataframe(rows)
     if df.empty:
         print("No data returned; check symbol/timeframe/range.")
