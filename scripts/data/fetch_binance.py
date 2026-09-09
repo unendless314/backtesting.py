@@ -43,6 +43,19 @@ def parse_iso_date(value: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
+def get_candle_close_ms(exchange: "ccxt.binance", timeframe: str, start_ms: int) -> int:
+    """Return the exclusive close timestamp (UTC ms) for a candle starting at start_ms."""
+    dt = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
+    if timeframe == "1M":
+        # Calendar month ends at the 1st of next month 00:00:00 UTC
+        year = dt.year + (1 if dt.month == 12 else 0)
+        month = 1 if dt.month == 12 else dt.month + 1
+        next_month_dt = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+        return int(next_month_dt.timestamp() * 1000)
+    tf_seconds = exchange.parse_timeframe(timeframe)
+    return start_ms + int(tf_seconds * 1000)
+
+
 def fetch_ohlcv_paginated(
     exchange: "ccxt.binance",
     symbol: str,
@@ -133,9 +146,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     if args.drop_unclosed and rows:
         try:
-            tf_seconds = exchange.parse_timeframe(args.timeframe)
+            close_ms = get_candle_close_ms(exchange, args.timeframe, rows[-1][0])
             now_ms = int(time.time() * 1000)
-            if rows[-1][0] + tf_seconds * 1000 > now_ms:
+            if now_ms < close_ms:
                 unclosed_dt = pd.to_datetime(rows[-1][0], unit="ms", utc=True)
                 print(f"Excluding unclosed candle starting at {unclosed_dt}")
                 rows = rows[:-1]
@@ -148,8 +161,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     if args.resample:
+        raw_last_dt = df.index[-1] if not df.empty else None
         df = resample_ohlcv(df, args.resample)
         print(f"Resampled to {args.resample}, rows now {len(df):,}")
+        if args.drop_unclosed and not df.empty and raw_last_dt is not None:
+            if df.index[-1] > raw_last_dt:
+                print(
+                    f"Excluding unclosed resampled candle at {df.index[-1]} "
+                    f"(extends past raw closed data at {raw_last_dt})"
+                )
+                df = df.iloc[:-1]
+                if df.empty:
+                    print("No data remaining after excluding unclosed resampled candle.")
+                    return 1
 
     save_csv(df, args.out)
     return 0
