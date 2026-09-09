@@ -17,6 +17,7 @@ import tempfile
 from scripts.data.fetch_binance import (
     get_candle_close_ms,
     get_resampled_bar_close_ms,
+    is_month_resample_rule,
     resample_ohlcv,
 )
 from scripts.generate_asset_report import analyze_crypto
@@ -245,6 +246,30 @@ class TestFetchBinanceCandleClose(unittest.TestCase):
         now_during = int(datetime(2026, 9, 9, 0, 15, 30, tzinfo=timezone.utc).timestamp() * 1000)
         should_drop_during = bar_close_ms > now_during or bar_close_ms > raw_last_close_ms
         self.assertTrue(should_drop_during, "In-progress 15min bar MUST be dropped!")
+
+    def test_resample_month_end_and_month_start_rules(self):
+        """Only month-end rules use calendar-month closing logic."""
+        self.assertTrue(is_month_resample_rule("2M"))
+        self.assertTrue(is_month_resample_rule("2ME"))
+        self.assertFalse(is_month_resample_rule("MS"))
+        self.assertFalse(is_month_resample_rule("2MS"))
+        self.assertFalse(is_month_resample_rule("15min"))
+
+        month_end_close = get_resampled_bar_close_ms(
+            pd.Timestamp("2026-03-31", tz="UTC"), "2M", "1d", self.mock_exchange
+        )
+        self.assertEqual(
+            pd.to_datetime(month_end_close, unit="ms", utc=True),
+            pd.Timestamp("2026-04-01", tz="UTC"),
+        )
+
+        month_start_close = get_resampled_bar_close_ms(
+            pd.Timestamp("2026-03-01", tz="UTC"), "MS", "1d", self.mock_exchange
+        )
+        self.assertEqual(
+            pd.to_datetime(month_start_close, unit="ms", utc=True),
+            pd.Timestamp("2026-03-02", tz="UTC"),
+        )
 
 
 if __name__ == "__main__":
