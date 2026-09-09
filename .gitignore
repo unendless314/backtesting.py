@@ -2,6 +2,8 @@
 *.html
 *.png
 _version.py
+.DS_Store
+**/.DS_Store
 
 *.egg-info
 .eggs/*
