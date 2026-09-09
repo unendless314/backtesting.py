@@ -107,25 +107,38 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
     # Skewness
     skewness = valid_df['roi'].skew()
     
-    # Odds Calculation
-    b_odds_mean = avg_win / avg_loss if avg_loss > 0 else 0
-    b_odds_median = median_win / median_loss if median_loss > 0 else 0
-    b_odds_conservative = conservative_win / conservative_loss if conservative_loss > 0 else 0
-    b_odds_aggressive = aggressive_win / aggressive_loss if aggressive_loss > 0 else 0
+    # Odds & Kelly Criterion
+    if prob_loss == 0:
+        # Edge case: 100% win rate (no losses in sample)
+        # In Kelly formula f* = p - q/b, when q=0, f* = p = 1.0 (100% full allocation)
+        b_odds_mean = float('inf')
+        b_odds_median = float('inf')
+        b_odds_conservative = float('inf')
+        b_odds_aggressive = float('inf')
+        kelly_mean = 1.0
+        kelly_median = 1.0
+        kelly_conservative = 1.0
+        kelly_aggressive = 1.0
+    else:
+        # Odds Calculation
+        b_odds_mean = avg_win / avg_loss if avg_loss > 0 else 0
+        b_odds_median = median_win / median_loss if median_loss > 0 else 0
+        b_odds_conservative = conservative_win / conservative_loss if conservative_loss > 0 else 0
+        b_odds_aggressive = aggressive_win / aggressive_loss if aggressive_loss > 0 else 0
 
-    # Kelly Criterion
-    # Standard (Mean-based)
-    kelly_mean = prob_win - (prob_loss / b_odds_mean) if b_odds_mean > 0 else 0
-    
-    # Robust (Median-based)
-    kelly_median = prob_win - (prob_loss / b_odds_median) if b_odds_median > 0 else 0
+        # Kelly Criterion
+        # Standard (Mean-based)
+        kelly_mean = prob_win - (prob_loss / b_odds_mean) if b_odds_mean > 0 else 0
+        
+        # Robust (Median-based)
+        kelly_median = prob_win - (prob_loss / b_odds_median) if b_odds_median > 0 else 0
 
-    # Conservative (Q1 Win / Q3 Loss)
-    kelly_conservative = prob_win - (prob_loss / b_odds_conservative) if b_odds_conservative > 0 else 0
+        # Conservative (Q1 Win / Q3 Loss)
+        kelly_conservative = prob_win - (prob_loss / b_odds_conservative) if b_odds_conservative > 0 else 0
 
-    # Aggressive (Q3 Win / Q1 Loss)
-    kelly_aggressive = prob_win - (prob_loss / b_odds_aggressive) if b_odds_aggressive > 0 else 0
-    
+        # Aggressive (Q3 Win / Q1 Loss)
+        kelly_aggressive = prob_win - (prob_loss / b_odds_aggressive) if b_odds_aggressive > 0 else 0
+        
     # Generate Markdown Content
     lines = []
     lines.append(f"# {symbol} {hold_days}天 持倉回測分析")
@@ -148,7 +161,9 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
     lines.append(f"| **整體回報率** | {valid_df['roi'].mean():.2%} | **{median_return:.2%}** |")
     lines.append(f"| **獲利交易平均回報** | +{avg_win:.2%} | +{median_win:.2%} |")
     lines.append(f"| **虧損交易平均回報** | -{avg_loss:.2%} | -{median_loss:.2%} |")
-    lines.append(f"| **盈虧比 (Reward/Risk)** | **{b_odds_mean:.2f}** | **{b_odds_median:.2f}** |")
+    odds_mean_str = "∞ (無虧損)" if b_odds_mean == float('inf') else f"{b_odds_mean:.2f}"
+    odds_median_str = "∞ (無虧損)" if b_odds_median == float('inf') else f"{b_odds_median:.2f}"
+    lines.append(f"| **盈虧比 (Reward/Risk)** | **{odds_mean_str}** | **{odds_median_str}** |")
     lines.append(f"")
     lines.append(f"## 情景分析 (Scenario Analysis - Based on Quartiles)")
     lines.append(f"| 情景 (Scenario) | 機率分界 (Percentile) | 預期回報率 (ROI) |")
