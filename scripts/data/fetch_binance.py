@@ -56,6 +56,35 @@ def get_candle_close_ms(exchange: "ccxt.binance", timeframe: str, start_ms: int)
     return start_ms + int(tf_seconds * 1000)
 
 
+def get_resampled_bar_close_ms(
+    ts: pd.Timestamp,
+    rule: str,
+    raw_timeframe: str,
+    exchange: "ccxt.binance",
+) -> int:
+    """Return the exclusive closing timestamp (UTC ms) for a resampled bar."""
+    rule_upper = rule.upper()
+    if "M" in rule_upper:
+        # In pandas resample with label="right", closed="right", a monthly rule (1M, ME)
+        # labels the bar on the last day of that calendar month (e.g. 2024-01-31).
+        # The month closes at next month 1st 00:00:00 UTC.
+        year = ts.year + (1 if ts.month == 12 else 0)
+        month = 1 if ts.month == 12 else ts.month + 1
+        next_month_dt = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+        return int(next_month_dt.timestamp() * 1000)
+
+    # For other rules, the label is the right edge of the bin (start of the last raw candle).
+    # Its closing timestamp is when that last raw candle closes.
+    try:
+        raw_tf_seconds = exchange.parse_timeframe(raw_timeframe)
+        close_ts = ts + pd.Timedelta(seconds=raw_tf_seconds)
+        return int(close_ts.timestamp() * 1000)
+    except Exception:
+        offset = pd.tseries.frequencies.to_offset(rule)
+        close_ts = ts + offset
+        return int(close_ts.timestamp() * 1000)
+
+
 def fetch_ohlcv_paginated(
     exchange: "ccxt.binance",
     symbol: str,
@@ -162,13 +191,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.resample:
         raw_last_dt = df.index[-1] if not df.empty else None
+        raw_last_ms = int(raw_last_dt.timestamp() * 1000) if raw_last_dt is not None else None
+        raw_last_close_ms = (
+            get_candle_close_ms(exchange, args.timeframe, raw_last_ms)
+            if raw_last_ms is not None
+            else None
+        )
+
         df = resample_ohlcv(df, args.resample)
         print(f"Resampled to {args.resample}, rows now {len(df):,}")
-        if args.drop_unclosed and not df.empty and raw_last_dt is not None:
-            if df.index[-1] > raw_last_dt:
+        if args.drop_unclosed and not df.empty and raw_last_close_ms is not None:
+            bar_close_ms = get_resampled_bar_close_ms(
+                df.index[-1], args.resample, args.timeframe, exchange
+            )
+            now_ms = int(time.time() * 1000)
+            target_limit_ms = min(args.until, now_ms) if args.until else now_ms
+
+            if bar_close_ms > target_limit_ms or bar_close_ms > raw_last_close_ms:
+                unclosed_label = df.index[-1]
+                close_dt = pd.to_datetime(bar_close_ms, unit="ms", utc=True)
                 print(
-                    f"Excluding unclosed resampled candle at {df.index[-1]} "
-                    f"(extends past raw closed data at {raw_last_dt})"
+                    f"Excluding unclosed resampled candle at {unclosed_label} "
+                    f"(closes at {close_dt})"
                 )
                 df = df.iloc[:-1]
                 if df.empty:
