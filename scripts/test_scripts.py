@@ -5,9 +5,13 @@ Tests cover:
 - Kelly criterion edge cases (flat returns, 100% win rate, win + push)
 - Candle closing timestamp calculations (including 1M calendar months and leap years)
 - Resample unclosed bar filtering (--tf 1M --resample 1M regression, 1W, 3D)
+- Unified --start / --end / --days date-range model (entry-window filtering,
+  lookback buffer, right-censoring, error handling)
 """
 
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
+import io
 import unittest
 from unittest.mock import MagicMock
 import pandas as pd
@@ -20,6 +24,8 @@ from scripts.data.fetch_binance import (
     is_month_resample_rule,
     resample_ohlcv,
 )
+from scripts._range_utils import parse_date_range, range_suffix
+from scripts.analyze_term_structure import analyze_term_structure
 from scripts.generate_asset_report import analyze_crypto
 from scripts.test_strategy_dip_buy import run_dip_buy_test
 
@@ -269,6 +275,133 @@ class TestFetchBinanceCandleClose(unittest.TestCase):
         self.assertEqual(
             pd.to_datetime(month_start_close, unit="ms", utc=True),
             pd.Timestamp("2026-03-02", tz="UTC"),
+        )
+
+
+class TestScriptDateFiltering(unittest.TestCase):
+    """統一 --start / --end / --days 日期區間模型的測試（見 proposals 定稿計畫）。"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.csv_path = Path(self.temp_dir.name) / "test_data.csv"
+        self._write_rising_csv()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+        for pattern in (
+            "TEST_Term_Structure_*.md",
+            "TEST_Strategy_DipBuy_*.md",
+            "TEST_*d_Hold_*.md",
+        ):
+            for f in Path("research/reports").glob(pattern):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+
+    def _write_rising_csv(self, periods=2000, start="2020-01-01"):
+        df = pd.DataFrame({
+            "datetime": pd.date_range(start, periods=periods, freq="D"),
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": [100.0 + i for i in range(periods)],
+            "volume": 1000.0,
+        })
+        df.to_csv(self.csv_path, index=False)
+
+    def test_entry_window_filter_precise(self):
+        """--start / --end 篩進場日：實際有效進場範圍首日 = 指定 start。"""
+        report, _ = analyze_crypto(
+            "TEST", self.csv_path, "2021-06-01", "2023-06-01", hold_days=365
+        )
+        self.assertIn("**指定進場區間**: 2021-06-01 至 2023-06-01", report)
+        self.assertIn("**實際有效進場範圍**: 2021-06-01 至 2023-06-01", report)
+
+    def test_lookback_buffer_preserved(self):
+        """指定 start 後，start 當天的 past_return 仍引用 start 之前的歷史。"""
+        start_ts = pd.Timestamp("2020-01-01") + pd.Timedelta(days=500)
+        start = start_ts.strftime("%Y-%m-%d")
+        report = run_dip_buy_test(
+            "TEST", self.csv_path, hold_days=365, threshold_pct=10.0, start_date=start
+        )
+        # 若沒有回溯緩衝，start 起算的第一年 past_return 會是 NaN，
+        # 有效進場首日會被推到 start + 365 天
+        self.assertIn(f"**實際有效進場範圍**: {start} 至", report)
+
+    def test_entry_window_semantics_result_may_exceed_end(self):
+        """end 設在資料中段：接近 end 的進場（結果落在 end 之後）仍被納入統計。"""
+        end_ts = pd.Timestamp("2020-01-01") + pd.Timedelta(days=1000)
+        end = end_ts.strftime("%Y-%m-%d")
+        report, _ = analyze_crypto("TEST", self.csv_path, None, end, hold_days=365)
+        # 進場日 0..1000 共 1001 天，全部有效（未來資料都存在）
+        self.assertIn("| **總交易樣本數** | 1001 天 |", report)
+        self.assertIn(f"**實際有效進場範圍**: 2020-01-01 至 {end}", report)
+
+    def test_right_censoring_dropped(self):
+        """不指定 end 時，資料最後 days 天的進場被捨棄。"""
+        expected_last = (pd.Timestamp("2020-01-01") + pd.Timedelta(days=1999 - 365)).date()
+        report, _ = analyze_crypto("TEST", self.csv_path, hold_days=365)
+        self.assertIn(f"至 {expected_last}（持有 365 天", report)
+
+    def test_invalid_inputs_no_crash_no_report(self):
+        """start > end、非 YYYY-MM-DD、區間無資料：中文錯誤訊息、不寫檔、不拋例外。"""
+        cases = [
+            lambda: analyze_crypto("TEST", self.csv_path, "2023-01-01", "2022-01-01"),
+            lambda: analyze_crypto("TEST", self.csv_path, "2021/09/10"),
+            lambda: analyze_crypto("TEST", self.csv_path, "2026-01-01"),
+            lambda: run_dip_buy_test(
+                "TEST", self.csv_path, hold_days=365, start_date="2023-01-01",
+                end_date="2022-01-01"
+            ),
+            lambda: analyze_term_structure("TEST", self.csv_path, "2021-02-30"),
+        ]
+        for call in cases:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                result = call()
+            report = result[0] if isinstance(result, tuple) else result
+            self.assertIsNone(report)
+            self.assertIn("錯誤", buf.getvalue())
+
+        # 不應寫出任何報告檔
+        for pattern in (
+            "TEST_Term_Structure_*.md",
+            "TEST_Strategy_DipBuy_*.md",
+            "TEST_*d_Hold_*.md",
+        ):
+            self.assertEqual(list(Path("research/reports").glob(pattern)), [])
+
+    def test_term_structure_short_range_skips_long_periods(self):
+        """只給 2 年區間時，長天期（如 20Q）被跳過，程式正常結束。"""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            report = analyze_term_structure(
+                "TEST", self.csv_path, "2021-01-01", "2022-12-31"
+            )
+        self.assertIsNotNone(report)
+        self.assertIn("| **1 Q (0.25 yr)** |", report)
+        self.assertIn("| **10 Q (2.50 yr)** |", report)
+        self.assertNotIn("20 Q", report)
+
+    def test_range_utils_parse_and_suffix(self):
+        """共用模組：嚴格 YYYY-MM-DD 驗證與檔名區間字串規則。"""
+        start_ts, end_ts = parse_date_range("2021-09-10", "2022-12-31")
+        self.assertEqual(start_ts, pd.Timestamp("2021-09-10"))
+        self.assertEqual(end_ts, pd.Timestamp("2022-12-31"))
+        self.assertEqual(parse_date_range(None, None), (None, None))
+
+        for bad in ("2021/09/10", "2021-9-10", "2021-02-30"):
+            with self.assertRaises(ValueError):
+                parse_date_range(bad, None)
+        with self.assertRaises(ValueError):
+            parse_date_range("2023-01-01", "2022-01-01")
+
+        self.assertEqual(range_suffix(None, None), "All_Time")
+        self.assertEqual(range_suffix("2021-09-10", None), "2021-09-10_to_Now")
+        self.assertEqual(range_suffix(None, "2022-12-31"), "Start_to_2022-12-31")
+        self.assertEqual(
+            range_suffix("2021-09-10", "2022-12-31"), "2021-09-10_to_2022-12-31"
         )
 
 

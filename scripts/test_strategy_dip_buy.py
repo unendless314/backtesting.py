@@ -1,13 +1,26 @@
 import argparse
+import sys
 import pandas as pd
 from pathlib import Path
-import numpy as np
 
-def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
+try:
+    from ._range_utils import entry_window_mask, parse_date_range, range_suffix
+except ImportError:  # 直接執行 python scripts/xxx.py 時走這裡
+    from _range_utils import entry_window_mask, parse_date_range, range_suffix
+
+
+def run_dip_buy_test(symbol, csv_path, hold_days=None, threshold_pct=-0.1115,
+                     start_date=None, end_date=None):
     # Load Data
     if not csv_path.exists():
-        print(f"Error: File {csv_path} not found.")
-        return
+        print(f"錯誤：找不到檔案 {csv_path}")
+        return None
+
+    try:
+        start_ts, end_ts = parse_date_range(start_date, end_date)
+    except ValueError as e:
+        print(f"錯誤：{e}")
+        return None
 
     # Peek to check column names
     peek = pd.read_csv(csv_path, nrows=1)
@@ -20,6 +33,9 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
         df.rename(columns={date_col: 'datetime'}, inplace=True)
         
     df.sort_values('datetime', inplace=True)
+
+    full_start = df['datetime'].iloc[0].date()
+    full_end = df['datetime'].iloc[-1].date()
 
     # Auto-detect asset type and set default hold_days if not specified
     if hold_days is None:
@@ -37,19 +53,20 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
              asset_type = "Unknown (Default 365)"
         print(f"Detected Asset Type: {asset_type} -> Setting hold_days to {hold_days}")
     
-    # 1. Calculate Past 1-Year Return (Momentum)
+    # 1. Calculate Past 1-Year Return (Momentum) — 在全量資料上計算，保留回溯緩衝
     df['past_return'] = df['close'].pct_change(periods=hold_days)
-    
+
     # 2. Calculate Future Return (The Outcome)
     df['future_close'] = df['close'].shift(-hold_days)
     df['future_roi'] = (df['future_close'] - df['close']) / df['close']
 
-    # Remove rows where we don't have enough data
-    valid_df = df.dropna(subset=['past_return', 'future_roi']).copy()
-    
+    # 3. 最後才套用進場日篩選（Entry-Window Filtering），再捨棄無效列（右截尾）
+    mask = entry_window_mask(df, start_ts, end_ts)
+    valid_df = df.loc[mask].dropna(subset=['past_return', 'future_roi']).copy()
+
     if valid_df.empty:
-        print("Not enough data to run the analysis.")
-        return
+        print("錯誤：指定區間內沒有任何有效進場樣本（進場日 + 持有天數可能超過資料末端）。")
+        return None
     
     # --- Strategy Group: Buy Only when Past Return < Threshold ---
     signal_mask = valid_df['past_return'] < threshold_pct
@@ -137,6 +154,14 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
         kelly_aggressive = prob_win - (prob_loss / b_odds_aggressive) if b_odds_aggressive > 0 else 0
 
     # --- Generate Markdown Content ---
+    # 指定進場區間顯示文字（未給的邊界以資料實際範圍呈現）
+    if start_ts is None and end_ts is None:
+        specified_range = "全歷史"
+    else:
+        s = str(start_ts.date()) if start_ts is not None else str(full_start)
+        e = str(end_ts.date()) if end_ts is not None else str(full_end)
+        specified_range = f"{s} 至 {e}"
+
     lines = []
     # Title indicating Strategy
     lines.append(f"# {symbol} 逢低買入策略 (Dip Buy Strategy)")
@@ -144,7 +169,13 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
     lines.append(f"**數據來源**: `{csv_path.name}`")
     lines.append(f"**策略條件**: 當「過去一年報酬率」低於 `{threshold_pct:.2%}` 時買入")
     lines.append(f"**持有期間**: {hold_days} 天")
-    lines.append(f"**分析進場區間**: {valid_df['datetime'].iloc[0].date()} 至 {valid_df['datetime'].iloc[-1].date()}")
+    lines.append(f"**完整數據範圍**: {full_start} 至 {full_end}")
+    lines.append(f"**指定進場區間**: {specified_range}")
+    lines.append(
+        f"**實際有效進場範圍**: {valid_df['datetime'].iloc[0].date()} 至 "
+        f"{valid_df['datetime'].iloc[-1].date()}"
+        f"（持有 {hold_days} 天，末端不足持有期的進場已捨棄）"
+    )
     lines.append(f"")
     lines.append(f"## 統計概覽 (Statistics Overview)")
     lines.append(f"| 指標 | 數值 | 說明 |")
@@ -183,6 +214,7 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
     lines.append(f"")
     lines.append(f"## 分析說明與風險提示")
     lines.append(f"本報告基於歷史數據進行回測，僅統計符合「策略條件」的進場日表現。")
+    lines.append(f"本報告的進場日皆在指定區間內，但持有結果可能動用指定結束日之後的資料。")
     lines.append(f"")
     lines.append(f"### 1. 凱利公式策略定義")
     lines.append(f"本報告提供四種不同風險偏好的資金配置建議，請根據個人風險承受能力參考：")
@@ -201,8 +233,8 @@ def run_dip_buy_test(symbol, csv_path, hold_days=365, threshold_pct=-0.1115):
     print(report_content)
 
     # Save to file
-    threshold_str = f"{abs(threshold_pct)*100:.2f}pct_Drop".replace(".", "p") 
-    filename = f"{symbol}_Strategy_DipBuy_{threshold_str}.md"
+    threshold_str = f"{abs(threshold_pct)*100:.2f}pct_Drop".replace(".", "p")
+    filename = f"{symbol}_Strategy_DipBuy_{threshold_str}_{range_suffix(start_date, end_date)}.md"
     out_path = Path("research/reports") / filename
     
     with open(out_path, "w", encoding="utf-8") as f:
@@ -217,9 +249,11 @@ def main():
     parser.add_argument("--file", help="Specific CSV file path")
     parser.add_argument("--days", type=int, default=None, help="Holding period days (Auto-detect if omitted)")
     parser.add_argument("--threshold", type=float, default=-0.1115, help="Drop threshold (e.g., -0.1115 for -11.15%)")
-    
+    parser.add_argument("--start", help="Start Date (YYYY-MM-DD)，最早可以進場的日期")
+    parser.add_argument("--end", help="End Date (YYYY-MM-DD)，最晚可以進場的日期")
+
     args = parser.parse_args()
-    
+
     # Infer path or use provided one
     if args.file:
         csv_path = Path(args.file)
@@ -230,7 +264,10 @@ def main():
              # Try Generic/Stock pattern
              csv_path = Path(f"data/raw/{args.symbol}_1d.csv")
 
-    run_dip_buy_test(args.symbol, csv_path, args.days, args.threshold)
+    result = run_dip_buy_test(args.symbol, csv_path, args.days, args.threshold,
+                              start_date=args.start, end_date=args.end)
+    if result is None:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

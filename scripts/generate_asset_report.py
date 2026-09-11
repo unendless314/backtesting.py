@@ -3,10 +3,23 @@ import pandas as pd
 from pathlib import Path
 import sys
 
+try:
+    from ._range_utils import entry_window_mask, parse_date_range, range_suffix
+except ImportError:  # 直接執行 python scripts/xxx.py 時走這裡
+    from _range_utils import entry_window_mask, parse_date_range, range_suffix
+
+
 def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=365):
     # Load Data
     if not csv_path.exists():
-        return f"Error: File {csv_path} not found."
+        print(f"錯誤：找不到檔案 {csv_path}")
+        return None, hold_days
+
+    try:
+        start_ts, end_ts = parse_date_range(start_date, end_date)
+    except ValueError as e:
+        print(f"錯誤：{e}")
+        return None, hold_days
 
     # First, peek at the columns to decide how to parse dates
     peek_df = pd.read_csv(csv_path, nrows=1)
@@ -52,12 +65,8 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
     df['future_close'] = df['close'].shift(-hold_days)
     df['roi'] = (df['future_close'] - df['close']) / df['close']
 
-    # Filter by Date Range
-    mask = pd.Series([True] * len(df), index=df.index)
-    if start_date:
-        mask &= (df['datetime'] >= start_date)
-    if end_date:
-        mask &= (df['datetime'] <= end_date)
+    # Filter by Date Range（進場日篩選：指標已在全量資料算好，最後才篩進場日）
+    mask = entry_window_mask(df, start_ts, end_ts)
     
     # We must also drop rows where future_close is NaN (the last `hold_days`)
     # However, if the user specified an end_date that is long ago, the future might be known.
@@ -68,7 +77,8 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
     
     total_samples = len(valid_df)
     if total_samples == 0:
-        return "Not enough data for the selected range."
+        print("錯誤：指定區間內沒有任何有效進場樣本（進場日 + 持有天數可能超過資料末端）。")
+        return None, hold_days
 
     # Stats Calculation
     winners = valid_df[valid_df['roi'] > 0]
@@ -151,12 +161,25 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
         # Aggressive (Q3 Win / Q1 Loss)
         kelly_aggressive = prob_win - (prob_loss / b_odds_aggressive) if b_odds_aggressive > 0 else 0
     # Generate Markdown Content
+    # 指定進場區間顯示文字（未給的邊界以資料實際範圍呈現）
+    if start_ts is None and end_ts is None:
+        specified_range = "全歷史"
+    else:
+        s = str(start_ts.date()) if start_ts is not None else str(full_start)
+        e = str(end_ts.date()) if end_ts is not None else str(full_end)
+        specified_range = f"{s} 至 {e}"
+
     lines = []
     lines.append(f"# {symbol} {hold_days}天 持倉回測分析")
     lines.append(f"")
     lines.append(f"**數據來源**: `{csv_path.name}`")
     lines.append(f"**完整數據範圍**: {full_start} 至 {full_end}")
-    lines.append(f"**分析進場區間**: {valid_df['datetime'].iloc[0].date()} 至 {valid_df['datetime'].iloc[-1].date()}")
+    lines.append(f"**指定進場區間**: {specified_range}")
+    lines.append(
+        f"**實際有效進場範圍**: {valid_df['datetime'].iloc[0].date()} 至 "
+        f"{valid_df['datetime'].iloc[-1].date()}"
+        f"（持有 {hold_days} 天，末端不足持有期的進場已捨棄）"
+    )
     lines.append(f"")
     lines.append(f"## 統計概覽 (Statistics Overview)")
     lines.append(f"| 指標 | 數值 | 說明 |")
@@ -194,7 +217,8 @@ def analyze_crypto(symbol, csv_path, start_date=None, end_date=None, hold_days=3
     lines.append(f"| **激進策略 (基於樂觀預期)** | `{kelly_aggressive:.2%}` | `(不建議)` |")
     lines.append(f"")
     lines.append(f"## 分析說明與風險提示")
-    lines.append(f"本報告基於歷史數據進行回測，模擬在「分析進場區間」內的**每一天**都買入該資產，並嚴格持有 **{hold_days} 天**後的結果。")
+    lines.append(f"本報告基於歷史數據進行回測，模擬在「實際有效進場範圍」內的**每一天**都買入該資產，並嚴格持有 **{hold_days} 天**後的結果。")
+    lines.append(f"本報告的進場日皆在指定區間內，但持有結果可能動用指定結束日之後的資料。")
     lines.append(f"")
     lines.append(f"### 1. 凱利公式策略定義")
     lines.append(f"本報告提供四種不同風險偏好的資金配置建議，請根據個人風險承受能力參考：")
@@ -230,13 +254,11 @@ def main():
             csv_path = Path(f"data/raw/{args.symbol}_1d.csv")
     
     report_content, hold_days = analyze_crypto(args.symbol, csv_path, args.start, args.end, args.days)
-    
+    if report_content is None:
+        sys.exit(1)
+
     # Output file
-    range_str = "All_Time"
-    if args.start:
-        range_str = f"{args.start}_to_{args.end if args.end else 'Now'}"
-        
-    filename = f"{args.symbol}_{hold_days}d_Hold_{range_str}.md"
+    filename = f"{args.symbol}_{hold_days}d_Hold_{range_suffix(args.start, args.end)}.md"
     out_path = Path("research/reports") / filename
     
     with open(out_path, "w", encoding="utf-8") as f:
