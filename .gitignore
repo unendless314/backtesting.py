@@ -31,3 +31,7 @@ data/**/*.parquet
 data/**/*.feather
 data/**/raw/
 data/**/resampled/
+
+# Generated research reports (regenerated on demand; not tracked)
+research/reports/*
+!research/reports/.gitkeep
