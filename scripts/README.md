@@ -92,6 +92,30 @@ Analyzes the "Term Structure of Returns" to visualize how risk and return evolve
     python3 scripts/analyze_term_structure.py --symbol BNB --start 2021-09-10
     ```
 
+### 3. `calculate_price_pr.py`
+計算「價格百分位 (PR)」：現在的價格，在過去某段期間裡排第幾。PR 90% = 比該期間 90% 的日子都貴。
+
+*   **Features:**
+    *   區間依**日曆日期**切：近 1 年／近 3 年／近 5 年／全歷史（股票、加密貨幣、基金通用）。資料不夠長的區間顯示「資料不足」。
+    *   CSV 有 `adj_close` 時，「價格／淨值 PR」與「含息總報酬 PR」分兩欄並列（配息型基金兩者差異很大，勿混用）。
+    *   缺失價格自動排除；最新資料過舊（超過 7 天）會在報告開頭警告。
+    *   報告輸出至 `research/reports/{代號}_Price_PR.md`（每次覆蓋為最新版）。
+    *   找檔順序：`data/raw/{代號}USDT_1d.csv` → `data/raw/{代號}_1d.csv`；也可用 `--file` 指定。
+
+*   **Usage:**
+    ```bash
+    python3 scripts/calculate_price_pr.py --symbol BTC
+    python3 scripts/calculate_price_pr.py --symbol VOO
+
+    # 四檔非投資等級債基金（代號為 Yahoo Finance / 晨星編碼，--name 為報告顯示名稱）
+    python3 scripts/calculate_price_pr.py --symbol 0P000088YM --name 富達亞洲非投資等級債
+    python3 scripts/calculate_price_pr.py --symbol 0P0000PO17 --name 富達美元非投資等級債
+    python3 scripts/calculate_price_pr.py --symbol 0P00001BK3.F --name 富達歐洲非投資等級債
+    python3 scripts/calculate_price_pr.py --symbol 0P000019VL --name 聯博全球非投資等級債
+    ```
+    下載基金資料時請用 `_1d` 命名以便自動找檔，例如：
+    `python scripts/data/fetch_yfinance.py --symbol 0P000088YM --out data/raw/0P000088YM_1d.csv`
+
 ---
 
 ## 🧪 Strategy Backtesting

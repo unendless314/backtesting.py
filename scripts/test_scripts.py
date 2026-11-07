@@ -7,9 +7,10 @@ Tests cover:
 - Resample unclosed bar filtering (--tf 1M --resample 1M regression, 1W, 3D)
 - Unified --start / --end / --days date-range model (entry-window filtering,
   lookback buffer, right-censoring, error handling)
+- Price PR report (calendar windows, NaN handling, empty/missing files, exit codes)
 """
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 import io
 import unittest
@@ -28,6 +29,16 @@ from scripts._range_utils import parse_date_range, range_suffix
 from scripts.analyze_term_structure import analyze_term_structure
 from scripts.generate_asset_report import analyze_crypto
 from scripts.test_strategy_dip_buy import run_dip_buy_test
+from scripts.calculate_price_pr import (
+    analyze_series,
+    build_report,
+    data_file_candidates,
+    load_price_csv,
+    main as price_pr_main,
+    percentile_rank,
+    resolve_csv_path,
+    safe_file_stem,
+)
 
 
 class TestKellyCriterion(unittest.TestCase):
@@ -403,6 +414,193 @@ class TestScriptDateFiltering(unittest.TestCase):
         self.assertEqual(
             range_suffix("2021-09-10", "2022-12-31"), "2021-09-10_to_2022-12-31"
         )
+
+
+class TestPricePR(unittest.TestCase):
+    """calculate_price_pr: calendar windows, NaN, bad files, exit codes."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.dir = Path(self.temp_dir.name)
+        # Reports go to a temp dir so real files in research/reports are never touched
+        self.report_dir = self.dir / "reports"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _write(self, df, name="data.csv"):
+        path = self.dir / name
+        df.to_csv(path, index=False)
+        return path
+
+    def _run_main(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = price_pr_main(argv, report_dir=self.report_dir)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_percentile_rank_ignores_nan(self):
+        s = pd.Series([100.0, float("nan"), 200.0])
+        self.assertEqual(percentile_rank(s, 200.0), 100.0)
+        self.assertEqual(percentile_rank(s, 100.0), 50.0)
+        with self.assertRaises(ValueError):
+            percentile_rank(pd.Series([float("nan")]), 1.0)
+
+    def test_one_year_window_uses_calendar_not_252_bars(self):
+        """Daily data incl. weekends (crypto): 1Y = calendar year, not 252 bars."""
+        dates = pd.Series(pd.date_range("2020-01-01", "2023-01-01", freq="D"))
+        values = pd.Series([1000.0] * (len(dates) - 300) + [float(i) for i in range(300)])
+        res = analyze_series(dates, values)
+        one_year = res["windows"][0]
+        self.assertEqual(one_year["label"], "近 1 年")
+        self.assertEqual(one_year["start"], pd.Timestamp("2022-01-01"))
+        self.assertEqual(one_year["samples"], 366)  # both ends inclusive
+
+    def test_business_day_window(self):
+        """Stocks (trading days only): 1Y window starts about one year back."""
+        dates = pd.Series(pd.bdate_range("2020-01-01", "2023-01-02"))
+        res = analyze_series(dates, pd.Series(range(len(dates)), dtype=float))
+        one_year = res["windows"][0]
+        self.assertEqual(one_year["start"], pd.Timestamp("2022-01-03"))
+        self.assertEqual(one_year["pr"], 100.0)
+
+    def test_insufficient_window(self):
+        dates = pd.Series(pd.date_range("2022-03-07", periods=800, freq="D"))
+        res = analyze_series(dates, pd.Series(range(800), dtype=float))
+        flags = {w["label"]: w["insufficient"] for w in res["windows"]}
+        self.assertEqual(
+            flags, {"近 1 年": False, "近 3 年": True, "近 5 年": True, "全歷史": False}
+        )
+
+    def test_latest_nan_uses_last_valid_price(self):
+        dates = pd.Series(pd.date_range("2024-01-01", periods=4, freq="D"))
+        res = analyze_series(dates, pd.Series([1.0, 3.0, 2.0, float("nan")]))
+        self.assertEqual(res["latest_value"], 2.0)
+        self.assertEqual(res["latest_date"], pd.Timestamp("2024-01-03"))
+        self.assertEqual(res["dropped"], 1)
+        self.assertAlmostEqual(res["windows"][-1]["pr"], 200 / 3)
+
+    def test_date_and_datetime_columns(self):
+        base = {"open": 1.0, "high": 1.0, "low": 1.0, "close": [1.0, 2.0], "volume": 0}
+        p1 = self._write(pd.DataFrame({"Date": ["2024-01-02", "2024-01-01"], **base}), "a.csv")
+        p2 = self._write(
+            pd.DataFrame({
+                "datetime": ["2024-01-01 00:00:00+00:00", "2024-01-02 00:00:00+00:00"],
+                **base,
+            }),
+            "b.csv",
+        )
+        df1, df2 = load_price_csv(p1), load_price_csv(p2)
+        self.assertIn("datetime", df1.columns)
+        # Unsorted Date column is sorted by date after loading
+        self.assertEqual(df1["close"].tolist(), [2.0, 1.0])
+        self.assertIsNotNone(df2["datetime"].dt.tz)
+
+    def test_non_numeric_close_treated_as_missing(self):
+        path = self.dir / "bad.csv"
+        path.write_text(
+            "Date,close\n2024-01-01,1\n2024-01-02,bad\n2024-01-03,3\n2024-01-04,inf\n"
+        )
+        df = load_price_csv(path)
+        res = analyze_series(df["datetime"], df["close"])
+        self.assertEqual(res["latest_value"], 3.0)
+        self.assertEqual(res["dropped"], 2)
+        code, _, _ = self._run_main(["--symbol", "TESTPR", "--file", str(path)])
+        self.assertEqual(code, 0)
+
+    def test_all_zero_close_does_not_crash(self):
+        df = pd.DataFrame({
+            "Date": pd.date_range("2024-01-01", periods=5).strftime("%Y-%m-%d"),
+            "close": 0.0,
+        })
+        path = self._write(df)
+        report = build_report("TESTPR", path, load_price_csv(path))
+        self.assertIn("| 0.0000 | 0.0000 | 0.0000 | - |", report)
+
+    def test_empty_and_missing_files_exit_1(self):
+        header_only = self.dir / "header.csv"
+        header_only.write_text("datetime,open,high,low,close,volume\n")
+        blank = self.dir / "blank.csv"
+        blank.write_text("")
+        for path in (header_only, blank, self.dir / "missing.csv"):
+            code, _, err = self._run_main(["--symbol", "TESTPR", "--file", str(path)])
+            self.assertEqual(code, 1, path)
+            self.assertIn("錯誤", err)
+        self.assertFalse(self.report_dir.exists())
+
+    def test_symbol_to_safe_filename(self):
+        """Yahoo-style symbols keep working; path characters never escape report_dir."""
+        path = self._write(pd.DataFrame({"Date": ["2024-01-01"], "close": [1.0]}))
+        cases = {
+            "^GSPC": "^GSPC_Price_PR.md",
+            "EURUSD=X": "EURUSD=X_Price_PR.md",
+            "0P00001BK3.F": "0P00001BK3.F_Price_PR.md",
+            "BTC/USDT": "BTC_USDT_Price_PR.md",
+            "../evil": "_evil_Price_PR.md",
+            "/tmp/evil": "_tmp_evil_Price_PR.md",
+            "a\\b": "a_b_Price_PR.md",
+        }
+        for symbol, filename in cases.items():
+            code, out, _ = self._run_main(["--symbol", symbol, "--file", str(path)])
+            self.assertEqual(code, 0, symbol)
+            self.assertTrue((self.report_dir / filename).exists(), symbol)
+            # The report itself still shows the original symbol
+            self.assertIn(f"# {symbol} ", out)
+        self.assertEqual(
+            sorted(p.name for p in self.report_dir.iterdir()), sorted(cases.values())
+        )
+        self.assertEqual(safe_file_stem("^GSPC"), "^GSPC")
+        for bad in ("", "...", "."):
+            code, _, err = self._run_main(["--symbol", bad, "--file", str(path)])
+            self.assertEqual(code, 1, bad)
+            self.assertIn("代號", err)
+
+    def test_auto_lookup_with_pair_symbol(self):
+        """--symbol BTC/USDT without --file finds data/raw/BTCUSDT_1d.csv."""
+        data_dir = self.dir / "raw"
+        data_dir.mkdir()
+        pd.DataFrame({"Date": ["2024-01-01"], "close": [1.0]}).to_csv(
+            data_dir / "BTCUSDT_1d.csv", index=False
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = price_pr_main(
+                ["--symbol", "BTC/USDT"], report_dir=self.report_dir, data_dir=data_dir
+            )
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("`BTCUSDT_1d.csv`", out.getvalue())
+        self.assertTrue((self.report_dir / "BTC_USDT_Price_PR.md").exists())
+        # Path characters cannot move the lookup outside data_dir
+        self.assertEqual(
+            data_file_candidates("../evil"), ["evilUSDT_1d.csv", "evil_1d.csv"]
+        )
+
+    def test_resolve_csv_path(self):
+        self.assertIsNone(resolve_csv_path("ABC", self.dir))
+        (self.dir / "ABC_1d.csv").write_text("x")
+        self.assertEqual(resolve_csv_path("ABC", self.dir), self.dir / "ABC_1d.csv")
+        (self.dir / "ABCUSDT_1d.csv").write_text("x")
+        self.assertEqual(resolve_csv_path("ABC", self.dir), self.dir / "ABCUSDT_1d.csv")
+
+    def test_report_with_adj_close_and_name(self):
+        dates = pd.date_range("2024-01-01", periods=10, freq="D")
+        df = pd.DataFrame({
+            "Date": dates.strftime("%Y-%m-%d"),
+            "close": [5.0] * 9 + [4.0],
+            "adj_close": [float(i) for i in range(10)],
+        })
+        path = self._write(df)
+        report = build_report(
+            "TESTPR", path, load_price_csv(path), name="測試基金",
+            today=pd.Timestamp("2024-01-30"),
+        )
+        self.assertIn("# TESTPR（測試基金） 價格百分位分析", report)  # noqa: RUF001
+        self.assertIn("| 全歷史 | **10.0%** | 100.0% |", report)
+        self.assertIn("資料可能過期", report)
+
+        code, _, _ = self._run_main(["--symbol", "TESTPR", "--file", str(path)])
+        self.assertEqual(code, 0)
+        self.assertTrue((self.report_dir / "TESTPR_Price_PR.md").exists())
 
 
 if __name__ == "__main__":
